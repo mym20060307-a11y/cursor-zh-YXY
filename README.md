@@ -15,6 +15,10 @@
 
 </div>
 
+<p align="center">
+  <img src="docs/images/app-yxy.png" width="560" alt="YXY · Cursor 一键汉化 工具界面" />
+</p>
+
 ## 特点
 
 - **一键汉化 / 一键还原**：修改前自动备份；还原后与原版逐字节一致。

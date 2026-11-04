@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="apps/desktop/brand-icon.png" width="88" alt="YXY" />
+<img src="apps/desktop/brand-icon.png" width="96" alt="YXY" />
 
 # YXY · Cursor 一键汉化
 
@@ -14,8 +14,6 @@
 [下载](#-下载安装) · [使用步骤](#-使用步骤) · [常见问题](#-常见问题) · [反馈](https://github.com/mym20060307-a11y/cursor-zh-YXY/issues)
 
 </div>
-
-![汉化后的 Cursor：中文菜单](docs/images/hero.webp)
 
 ## 特点
 
@@ -33,27 +31,6 @@
 | 命令面板 | Cursor / VS Code 命令文案 |
 | Cursor 设置 | 常规、套餐与用量、智能体、模型、Profile 等 |
 | Agent / Chat | 模式、提示、常用按钮 |
-
-<details>
-<summary><b>更多 Cursor 界面截图</b></summary>
-
-![汉化前后对比](docs/images/before-after.webp)
-
-![命令面板](docs/images/command-palette.webp)
-
-![设置 · 智能体](docs/images/settings-agents.webp)
-
-![设置 · 模型](docs/images/settings-models.webp)
-
-![API 密钥](docs/images/settings-api-keys.webp)
-
-<img src="docs/images/agent-mode.webp" width="450" alt="Agent 模式" />
-
-<img src="docs/images/context-menu.webp" width="49%" alt="右键菜单" /> <img src="docs/images/menu-view.webp" width="49%" alt="查看菜单" />
-
-![Agents 窗口](docs/images/agents-window.webp)
-
-</details>
 
 ## 下载安装
 

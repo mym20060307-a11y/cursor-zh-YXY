@@ -38,13 +38,15 @@
 
 ## 下载安装
 
-到 [Releases](https://github.com/mym20060307-a11y/cursor-zh-YXY/releases) 下载对应系统的包：
+到 [Releases](https://github.com/mym20060307-a11y/cursor-zh-YXY/releases/latest) 下载：
 
 | 系统 | 文件 |
 |---|---|
-| **Windows** 10/11 x64 | `cursor-zh-*-win-x64-portable.exe`（免安装）或 setup / cli 包 |
-| **macOS** | dmg / app.zip |
-| **Linux** | deb / AppImage |
+| **Windows** 10/11 x64 | [免安装 portable.exe](https://github.com/mym20060307-a11y/cursor-zh-YXY/releases/latest/download/cursor-zh-0.2.4-win-x64-portable.exe) |
+| | [解压版 zip](https://github.com/mym20060307-a11y/cursor-zh-YXY/releases/latest/download/cursor-zh-0.2.4-win-x64.zip) |
+| **macOS / Linux** | 当前 Release **尚未附带**（需在 macOS / Linux 主机上打包后再补发） |
+
+校验文件：[SHA256SUMS.txt](https://github.com/mym20060307-a11y/cursor-zh-YXY/releases/latest/download/SHA256SUMS.txt)
 
 ### 首次打开的安全提示
 

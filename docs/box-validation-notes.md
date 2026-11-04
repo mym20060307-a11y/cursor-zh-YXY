@@ -1,0 +1,424 @@
+# Box 实机验证记录（2026-10-29，Asia/Shanghai）
+
+> 只在 Grok Bot 的 box（Debian 13，DISPLAY=:5）上的 Cursor 上做的验证，**没有碰用户自己电脑上的 Cursor**。未登录 Cursor。
+
+## 环境与真实路径
+
+| 项 | 值 |
+|---|---|
+| Cursor | 3.27.22 stable（apt 源 `cursor.list`），commit `b1aa50cb6db84fd3e8c808259cb172ea73425c10`，vscodeVersion 1.128.0，Electron 42 |
+| 安装根 | `/usr/share/cursor`（root:root） |
+| product.json | `/usr/share/cursor/resources/app/product.json`（`checksums` 的 key 相对 `resources/app/out`） |
+| 经典 workbench | `resources/app/out/vs/workbench/workbench.desktop.main.js`（约 41MB，**在 checksums 里**） |
+| Agents/glass workbench | `resources/app/out/vs/workbench/workbench.glass.main.js`（约 50MB，**不在 checksums 里**；3.x 默认的第一个窗口 “Cursor Agents”） |
+| CLI | `/usr/share/cursor/bin/cursor`（`/usr/bin/cursor` 是软链） |
+| 用户数据 | `~/.config/Cursor`（`languagepacks.json`、`clp/` NLS 缓存） |
+| 扩展目录 | `~/.cursor/extensions`（`extensions.json` 是登记表） |
+| locale | `~/.cursor/argv.json`（JSONC，字段 `"locale"`） |
+| 本工具数据 | `~/.config/cursor-zh-localizer`（`state.json`、`backups/<version>/`、`cache/` 里的 vsix） |
+
+## 实测结果
+
+- `npm test`：**24 通过 / 0 失败**（node:test）。
+- `node scripts/run.mjs localize`：ok。静态替换 **711 处**，0 条未命中，约 27 秒。product.json 只有 1 行变化（desktop.main 的 checksum），两个 bundle 都能通过 `node --check`。
+- `node scripts/run.mjs revert`：3 个文件和原始 sha256 **逐字节一致**（`sha256sum -c` 全部 OK）。`argv.json` 里的 locale 已删除，语言包已从 `extensions.json` 注销。
+- 语言包：Open VSX 最新版 1.131.0 要求 `engines ^1.131.0`，**不兼容** VS Code 1.128.0，所以按 `<maj>.<min>.0` 固定用 **1.128.0**。用 `cursor --install-extension` 在 headless 环境下能装上。第一次启动后 `languagepacks.json` 出现 zh-cn，并生成 `clp/<hash>.zh-cn/<commit>`，说明 NLS 已生效。
+- 启动检查（未登录）：
+  - glass 窗口连续两次启动都正常渲染，登录页显示中文（用 AI 写代码的最佳方式 / 登录 / 注册）。
+  - `--classic` 经典窗口也正常，显示中文登录页。
+  - 日志里没有 “安装已损坏” 或 checksum 告警。
+- 词典：`dicts/zh-cn.json` 共 **126 条**，全部精确匹配。
+  - **85 条**通过锚点静态替换（desktop.main 80 条，glass 83 条）。
+  - **41 条**只靠 DOM 运行时补漏（短词或有歧义、用作逻辑值的字符串）。
+  - 必需锚点：`Cursor Settings`、`Rules, Skills, Subagents`。
+- Electron 外壳：`DISPLAY=:5 npx electron .` 能启动并保持运行（只有 dbus 噪音）。点击流程由上层验证。
+
+## 过程中发现并已修复
+
+1. **"DOM 扩展" 方案不可行**：扩展跑在 extension host，拿不到 DOM。已改为在 workbench bundle 末尾追加带标记的运行时（`/*CURSOR_ZH_DOM_BEGIN*/…END`），还原时从备份恢复即可去掉。
+2. **3.x 有两个 workbench**：除了 desktop.main，还有 glass（Agents 窗口，不在 checksums 里）。现在两个都会静态补丁并注入 DOM 运行时。
+3. **product.json 被整体重排**：原来是 `JSON.stringify` 重写。现在只做文本替换 checksum 的值，其余字节不变（有测试覆盖）。
+4. **语言包残留目录误判为“已安装”**：`--uninstall-extension` 会留下目录，要等 Cursor 下次启动才清理，导致再次汉化时跳过安装、实际没登记。现在以 `extensions.json` 的登记为准（有测试覆盖）。
+5. **首次汉化后 glass 窗口出现过一次空白**：日志里有 `Failed to create or load draft composer`。之后用 static-only、DOM-only、static+DOM 三种组合以及最终引擎产物各启动多次，**都没有复现**。判断是首次启动时的一次性现象（新语言包生成 NLS 缓存和 V8 code cache 重建时的竞态）。原因没有完全查清，列为 P1 观察项。
+
+## 问题清单（按优先级）
+
+### P0
+- **需要管理员权限**：Linux deb/rpm 安装在 `/usr/share/cursor`，属主是 root。localize 会正确拒绝并提示“没有写权限”。box 上验证时是手动 `sudo chown` 了这 3 个文件。真实用户需要 GUI 提权（pkexec/sudo 包装，Windows 用 UAC），或者走用户级安装（AppImage 或 `~/.local`）。
+- **每个 Cursor 版本都要一份锚点清单**：没有清单就拒绝修改（安全，但等于不支持新版本）。Cursor 更新后 bundle 会被覆盖，汉化失效，备份也对不上新版本。需要：用 `scripts/build-anchors.py` 做 CI 按版本生成清单；检测到版本变化时提示“重新汉化”，并丢弃旧备份。
+
+### P1
+- glass 首启空白（见上文第 5 条）：建议首启后自动检测，必要时提示再启动一次。
+- 覆盖面：登录页底部的 “Cursor's AI features require you to be logged in”（弯引号）、原生对话框（如 OS keyring 提示）、Electron 主进程菜单都还是英文。登录后的大部分 Cursor 自有 UI 没能实机看到（任务要求不登录），覆盖率要在登录态下再评估。
+- 静态替换的安全性靠启发式规则：排除 `===`、`case`、对象键、`[...]`、`.includes(`、`id:/type:/name:` 等用法。本版实测没有坏，但新版本必须重新跑分析和启动冒烟测试。
+- DOM 运行时的风险：
+  - 只做完全匹配，并跳过编辑器、终端、文件名（`label-name`、`monaco-icon-name-container`）。
+  - 但 AI 回复或用户内容恰好等于某个词条时也会被翻译。
+  - MutationObserver 在大 DOM 下的性能没有压测。
+- 命令面板按英文搜索：语言包会提供 `original` 英文别名，但被静态替换的 Cursor 自有命令没有英文别名。
+
+### P2
+- 性能：localize 约 27 秒，主要是对 40–50MB 文件逐条 split/join 711 次。可以改成每个文件单次扫描。
+- 语言包版本固定为 `<maj>.<min>.0`：如果 Open VSX 上没有对应版本，需要回退到最近的兼容版本（读取 `engines.vscode`）。
+- 卸载后语言包目录残留，要等 Cursor 下次启动才清理（VS Code 自身行为）。
+
+### Windows / macOS TODO
+- 路径：Windows 是 `%LOCALAPPDATA%\Programs\cursor\resources\app`，macOS 是 `/Applications/Cursor.app/Contents/Resources/app`。detect.js 里目前只是桩，没有实测。
+- macOS：修改 .app 内文件会破坏签名，可能需要 `codesign --force --deep -s -`，并处理 Gatekeeper 隔离；还要确认 `/Applications` 下的写权限。
+- Windows：系统级安装需要 UAC；Cursor 运行时文件被占用；检测运行中的进程要用 tasklist。
+- 用户数据目录：`%APPDATA%\Cursor` 和 `~/Library/Application Support/Cursor`；argv.json 都在 `~/.cursor`。
+
+## box 重启后重装 Cursor（2026-10-29 16:55，Asia/Shanghai）
+
+box 重启会清掉 `/usr/share/cursor`（以及 apt 源 `cursor.list`），`~/.config/Cursor`、`~/.cursor`、`~/.config/cursor-zh-localizer` 都还在。
+
+- **安装方式**：官方 apt 仓库里的 deb，用 `apt-get install ./cursor_3.27.22_amd64.deb` 安装（自动装依赖；postinst 会重新写 `/etc/apt/sources.list.d/cursor.sources`）。
+- **URL**：`https://downloads.cursor.com/aptrepo/pool/stable/c/cu/cursor_3.27.22_amd64.deb`（223,442,636 字节，sha256 `863a9dd15ca5fe84dd2f8e74fe2e926e8b438692f202277a89dd0ec3d928bf98`，来自 `https://downloads.cursor.com/aptrepo/dists/stable/main/binary-amd64/Packages` 中的 `3.27.22-1793067078`；同一索引里还有 3.27.20）。
+- **缓存**：`/workspace/cache/cursor_3.27.22_amd64.deb`；原版文件的 sha256 存在 `/workspace/cache/pristine-3.27.22.sha256`（可以 `sha256sum -c`）。
+- **一键重做**：`scripts/reinstall-cursor-box.sh --chown`。脚本会校验缓存的 sha256，不对就重新下载，然后安装，并把 4 个汉化目标文件 chown 给 box（这是 box 专用的权限绕过）。
+- 装好后是 3.27.22，commit `b1aa50cb…`，VS Code 1.128.0，和之前完全一致。4 个目标文件的 sha256 和旧备份 manifest 也逐个相同。
+
+### 过期汉化记录（已修复，有测试）
+
+- 重装后，`state.json` 还写着 `localized: true`，但安装文件已经是原版。
+- 修复前：`status` 显示“已汉化”，`localize` 拒绝执行（“已汉化，如需重做请先还原”）。
+- 修复前的 `revert` 还有更大的风险：它会拿旧备份去覆盖新安装。如果版本不同，就会把旧版本的文件写进新安装。
+- 现在的做法：先检查安装文件里有没有 DOM 运行时标记，再对比 version 和 installRoot，据此判断记录是否过期。
+  - `status` 新增 `patched`、`stale`、`localized` 三个字段。
+  - `localize` 遇到过期记录时，会把旧备份改名为 `backups/<ver>.stale-<时间>` 留档，然后重新汉化。上次留下的语言包和原始 locale 会沿用，还原时能真正恢复，而不是恢复成 zh-cn。
+  - `revert` 遇到过期记录时，不覆盖任何安装文件，只清理语言包和 locale。
+  - 如果安装文件已带补丁但没有汉化记录，`localize` 会拒绝执行，避免把已补丁的文件当成原版备份。
+  - GUI 会显示“汉化已失效（Cursor 被重装或更新），可重新汉化”。
+- `npm test`：35/35 通过。
+
+### 实测
+
+- `localize`：经典窗口 538 处，Agents 窗口 763 处，NLS 163 条，0 条未命中，约 3 秒。
+- `revert`：4 个文件对照 deb 原版 sha256 全部 OK（逐字节一致），locale 已删除，语言包已注销。
+- 再次 `localize`：计数相同。
+- 以 `DISPLAY=:5 setsid nohup /usr/share/cursor/cursor --disable-gpu` 启动（日志在 `/workspace/logs/cursor-run{1,2}.log`）。两次启动都**一次成功**，Agents 窗口是中文，没有空白，日志里没有损坏或 checksum 告警。当前已登录。
+- 截图：`/workspace/shots/run1-{root,agents}.png`、`run2-{agents,classic}.png`。
+  - 没能装上 imagemagick：box 上 apt 访问 deb.debian.org 时，出口代理返回 500，https 也会断开；但 curl 能访问。
+  - 所以改用 `ffmpeg -f x11grab -video_size 1920x1200 -i :5 -frames:v 1 <png>` 截图。
+
+### 登录态下仍是英文的可见文案
+
+- 经典窗口：
+  - 右侧聊天的标签页标题 “New Agent”：词典里有，但 DOM 运行时跳过了 tab label 类名。
+  - 状态栏的 “Cursor Tab”、“Tab Stats: 0/0 (0%)”、“Agent Stats: 0/0 (0%)”：带数字的拼接串，精确匹配命中不了。
+- Agents 窗口：右上角的 “IDE ↗”。
+- 两个窗口都有：模型名 “Cursor Grok 4.6 Medium”（专名，应保留）。
+- 另外，“GitHub”、“bug”、“/create-skill”、“/add-plugin”、文件夹名和用户名都应保留英文。
+
+## 第 3 轮：剩余英文 + DOM 误翻风险（2026-10-29 17:00–17:10，Asia/Shanghai）
+
+定位方法：临时用 `--remote-debugging-port=9333` 启动 box 上的 Cursor，用 `scripts/box-cdp-eval.mjs` 在渲染进程里查 DOM。验证完已改回普通方式启动，调试端口已关闭。
+
+1. **经典窗口聊天标签页 “New Agent”**
+   - bundle 里约 30 处 `"New Agent"`，大多是默认会话名、常量或比较值（`JHe="New Agent"`、`name||"New Agent"`），静态替换不安全。
+   - 标签页标题渲染在 `.composer-tab-label .label-name` 里，而 DOM 运行时为了保护文件名，会整棵跳过 `label-name`。
+   - 现在：`label-name` 位于 `composer-tab-label` 内时，**只翻默认标题**（New Agent / New Chat → 新建智能体）。用户自己起的会话名和普通文件名都不动（有测试）。
+2. **状态栏 “Tab Stats / Agent Stats”**
+   - 文案是模板字面量 `` `$(tab) Tab Stats: ${…}/${…} (${e}%)` ``。
+   - 静态层新增 `fragments`：带上下文的固定片段，出现次数必须和锚点里的 `count` 一致才替换，否则跳过并记为未命中。3.27.22 每个 bundle 12 处，共 24 处。覆盖状态栏文字、悬浮提示 “(Today) … lines” 和 ariaLabel。
+   - DOM 层新增 `dicts/zh-cn.patterns.json`：`{n}` 只匹配数字（`\d[\d.,/]*`），只在外壳区域生效（statusbar、titlebar、tabs-container、hover、action-bar），文本不超过 120 字符，作为静态层的兜底。
+3. **Agents 窗口 “IDE ↗”**
+   - 只有 `aria-label:"IDE"`，没有 tooltip（悬停截图已确认）。
+   - 按术语表保留 IDE，不做修改。
+4. **P1：DOM 误翻用户/AI 内容**
+   - 现在一律跳过以下内容：
+     - 标签：PRE、CODE、TEXTAREA、INPUT
+     - 可编辑区域：`contenteditable`（值不是 "false" 时）、`role=textbox`
+     - 编辑器与终端：`.monaco-editor`、`.view-lines`、`.xterm`
+     - 输入框：`ProseMirror`、`tiptap`
+     - markdown 容器：`markdown-root`、`ui-markdown`、`rendered-markdown`
+     - 聊天消息：`agent-transcript-row-markdown`、`agent-transcript-row-human`、`composer-human-message-content`
+     - 消息属性：`data-message-role`、`data-message-kind`、`data-sent-message-bubble(-text)`、`data-agent-transcript-human-bubble`
+   - MutationObserver 的增量路径同样按祖先链判断（流式输出不会被翻，有测试）。
+   - 代价：Cursor 的模型选择器用 `ui-markdown` 渲染模型名，所以模型列表里的 “Default” 不再被 DOM 翻译（本来就算模型名）。
+   - 设置页其余文案主要靠静态补丁，这次逐页扫描没有发现退化。
+
+- `npm test`：40/40 通过（新增 5 条）。
+- revert：4 个文件对照 deb 原版 sha256 全部 OK。localize 结果：经典 538 处，Agents 763 处，模板片段 24 处，NLS 163 条，0 条未命中，两个 bundle 都能通过 `node --check`。
+- 截图：
+  - `/workspace/shots/run3-agents.png`
+  - `/workspace/shots/run3-classic.png`
+  - `/workspace/shots/run3-classic-statusbar-hover.png`
+  - `/workspace/shots/run3-agents-ide-hover.png`
+  - `/workspace/shots/run3-agents-settings.png`
+  - `/workspace/shots/run3-agents-settings-models.png`
+- 设置页逐页扫描（Agents 窗口）还剩的英文（词典里没有，下一轮补）：
+  - **外观**：Agent Conversations、Colors、High Contrast
+  - **套餐与用量**：Included Usage、Resets、Upgrade to Pro（拼接串）
+  - **智能体**：Cursor Default、“Control whether agents can read files outside the workspace…”、“Automatically parse links when pasted into Quick Edit…”
+  - **源代码管理**：Pull Requests、“Mark Agent commits as 'Made with Cursor'”、worktree 清理的两条说明
+  - **浏览器与网络**：Browser Tab、Network protocol、Show、Required domains、Network diagnostics
+  - **代码智能**：“Accept the next word of a suggestion…”、“Automatically import necessary modules for TypeScript”、“Automatically index repositories…”、Codebase options、“Use with caution. Skip symlinks…”
+  - **测试版**：Update Access、Updates
+
+## 第 4 轮（2026-10-29，设置页补译 + 覆盖率扫描）
+
+**新增 `scripts/coverage-scan.mjs`**：Cursor 需要临时用 `--remote-debugging-port=9333` 启动，然后运行
+`node scripts/coverage-scan.mjs --json out.json --md out.md [--palette-pages N] [--only …]`。
+脚本只做只读操作：
+- 依次点击 Agents 窗口设置页和经典窗口 Cursor 设置页的各个导航项。会跳过带 ↗ 图标的外链项（云端智能体、文档），也跳过“返回”、VS Code 设置和账户入口，页面里的按钮一律不点。
+- 打开 Agents 窗口标题栏菜单（文件/编辑/查看/帮助）。
+- 在侧边栏条目上右键打开菜单。
+- 读取命令面板最上面 N 屏（只看主标题，英文别名属于设计保留）。
+
+菜单都用 Escape 关闭。每页统计“中文 / 英文 / 保留”三类节点，按 `scripts/coverage-keep.json`（依据术语表的保留英文：品牌、模型名、快捷键、日期、价格等）把保留项排除在外，再输出覆盖率和剩余英文清单。扫描结果在 `docs/coverage/3.27.22-run4-*.md`。
+
+**本轮改动**
+- 词典新增约 128 条，涵盖：
+  - 设置页：外观、套餐与用量、智能体、源代码管理、浏览器与网络、代码智能、测试版，以及经典窗口特有的“智能体审查”“内联差异”等；
+  - 资源管理器右键菜单；
+  - 常用命令面板命令。
+- `build-anchors.py` 新增两项：
+  - `TEMPLATE_RULES`：对带 `${…}` 的模板和 JSX 数组拆分文案（如 `["Upgrade to ",u.name]`、`["Resets ",…]`、`` `…via ${u}` ``、`` `${X?"\u2318":"Ctrl+"}K` ``），按实际 bundle 文本生成 `{from,to,count}` 片段，变量名随版本变化时重跑一次即可；
+  - 重新生成锚点时保留原有手写片段（前提是仍能精确匹配）。
+- 本轮锚点数量：静态整段 388 / 429 条（desktop / glass），模板片段每个 bundle 27 条。
+- 本轮 localize 结果：静态替换 1549 处，片段替换 74 处，NLS 176 条，未命中 0。
+- DOM 运行时：命令面板（输入框以 `>` 开头时）的主标题可以按整段精确匹配翻译；英文别名（`quick-input-list-label-meta`）、Quick Open 文件名、资源管理器名字仍然不翻。新增对应测试，共 41 项。
+- 关闭了第 2 轮扫描误点“云端智能体”时由 Cursor 拉起的 Chrome 窗口（cursor.com/dashboard/cloud-agents，17:08 打开）。
+
+**覆盖率（扫描结果，前 → 后）**
+- Agents 设置：
+  - 外观 91.7 → 100%
+  - 套餐与用量 28.6 → 100%
+  - 智能体 96.5 → 100%
+  - 语音 92.9 → 100%
+  - 源代码管理 82.6 → 100%
+  - 浏览器与网络 79.2 → 100%
+  - 代码智能 82.8 → 100%
+  - 测试版 60 → 100%
+  - 常规、模型保持 100%
+- 经典 Cursor 设置：
+  - 常规 95.1 → 100%
+  - 套餐与用量 28.6 → 100%
+  - 智能体 75.4 → 100%
+  - 源代码管理 57.6 → 100%
+  - 浏览器与网络 77.3 → 100%
+  - 代码智能 68 → 100%
+  - 测试版 60 → 100%
+  - 语音 92.9 → 100%
+- 菜单：一直是 100%。
+- 资源管理器右键菜单：78.6–80 → 100%。
+- 命令面板：
+  - 前 3 屏 28.1% → 前 2 屏 57.1%。剩下的 6 条都是 Cursor NDJSON Ingest / Deeplink 调试命令。
+  - 前 12 屏 72.2%。剩下 37 条主要是 Developer:/Remote-SSH:/Merge Editor (Dev) 等开发者命令。
+- “前”数据里命令面板那一行用的是旧选择器，把英文别名也算进去了，因此以 28.1% 为准。
+
+**仍是英文（有意保留或暂不处理）**
+- 套餐卡片里的“Pro $20/mo”和日期“Nov 26, 2026”：服务器下发的数据或日期格式。
+- 语音页的 “submit”：语音提交口令。
+- “Tab”“Cursor Tab”“LSP”“GitHub”：术语表规定保留。
+- 命令面板里的开发者/调试命令。
+- Agents 侧边栏当前没有智能体和仓库条目，所以右键菜单这次没有扫到内容；以后有条目时重跑脚本即可。
+- 经典窗口的“自定义”页使用另一套布局，扫描结果是 0/0，需要单独处理。
+
+## 第 5 轮（2026-10-29 17:30–18:00，Asia/Shanghai）：Linux 上真正可用的一键工具
+
+- **提权**：新增 `helper/czl-apply.sh`（POSIX sh）和 `src/elevate.js`。
+  - 提权顺序：pkexec → `sudo -n` → 给出手动 sudo 命令。
+  - pkexec 和 sudo 都执行 `/bin/sh -c <脚本正文>`，授权后脚本无法被替换。
+  - 如果存在 root 所有的 `/usr/lib/cursor-zh-localizer/czl-apply`（本工具 deb 安装），pkexec 改走它，配合 polkit 策略。
+  - 等待授权的状态会记下来（pending），之后可以接着完成或取消。
+- **box 的限制**：没有 polkitd，也没有 system dbus。pkexec 以 127 退出（"Error getting authority"），被正确识别为“无法完成授权”并回退，所以真正的 polkit 弹窗没能实测。实测了手动 sudo 命令和 `sudo -n` 两条路径。4 个文件始终保持 root:root。
+- **关闭与重启 Cursor**：
+  - 通过 /proc 识别主进程：没有 `--type=`，并且父进程不是 Cursor。Chromium 会把 cmdline 改写成一整串，需要拆回参数。
+  - 用 SIGTERM 关闭，写完后按原 argv、cwd、环境重新打开。等待授权期间 Cursor 保持关闭，重启信息存在 relaunch.json。
+- **AppImage**：识别只读挂载（squashfs、fuse、`/tmp/.mount_*`）。在独立 HOME 下实测了“解包 → 汉化（direct）→ 启动器”。rpm 的安装路径同 deb（`/usr/share/cursor`）。
+- **GUI 端到端**：在 DISPLAY=:5 上用 xdotool 操作，截图在 `/workspace/shots/run5-*.png`。
+  1. 状态显示“需要管理员权限”。
+  2. 一键汉化 → 确认关闭 Cursor → 显示 sudo 命令。
+  3. 执行命令后点“我已执行，继续”，Cursor 中文重启。
+  4. 还原（`sudo -n`），Cursor 英文重启。
+  5. 再次一键汉化（`sudo -n`），中文。
+  6. 另外截了“汉化已失效”“暂未适配 9.9.9”“发现 AppImage”三种状态（用 `CZL_ROOT` 指向 /tmp 下的假安装，并使用独立 HOME）。
+- **打包**：`scripts/build-desktop.mjs` 按仓库结构装配 `.build/app`，用 electron-builder 产出 `dist/*.AppImage` 和 `dist/*.deb`。
+  - 打包后的 AppImage（`APPIMAGE_EXTRACT_AND_RUN=1`）实测：还原，然后汉化，都成功。
+  - deb：`dpkg -i` 后从 `/usr/bin/cursor-zh-localizer` 启动正常；`czl-apply` 是 root 0755，拒绝 `../` 路径；`dpkg -r` 清理干净。
+
+遗留：
+- pkexec 加真实 polkit agent 的弹窗没有实测。
+- 应用图标还是默认的 Electron 图标。
+- deb 的 homepage 是占位地址。
+- 路径里有空格时，Chromium cmdline 拆分可能出错。
+- `dpkg --verify` 会报告 Cursor 的 4 个文件被改过。
+- Windows 和 macOS 仍未支持。
+
+## 第 6 轮（2026-10-29 18:00–18:40，Asia/Shanghai）：Windows + macOS 支持（box 上离线完成）
+
+> 上面的“Windows / macOS TODO”一节已由本轮实现。真机验证计划见 `docs/real-machine-test-plan.md`。
+
+### 官方安装包（Cursor 3.27.22，commit b1aa50cb6db84fd3e8c808259cb172ea73425c1f）
+
+下载根地址：`https://downloads.cursor.com/production/b1aa50cb6db84fd3e8c808259cb172ea73425c1f/`。缓存在 `/workspace/cache/`。
+
+| 文件（相对根地址） | sha256 |
+|---|---|
+| `win32/x64/user-setup/CursorUserSetup-x64-3.27.22.exe` | 54e5562afb2d0a37f84cc77728294dedc2215022b33ae6901d6c360d1ee5eeea |
+| `win32/x64/system-setup/CursorSetup-x64-3.27.22.exe` | 7e47c9627ecef45db94e2a8298801d9d1ffe7e4c5af6f0c5005b0400ff31c527 |
+| `darwin/arm64/Cursor-darwin-arm64.dmg` | fd9288d67f17d8510d19b9aa3daf8204c636377f3748273bc0fbdd38d6919580 |
+| `darwin/x64/Cursor-darwin-x64.dmg` | 03ccd2a6caaec695871a48e9ef8cefa023951f6e344672d92e86d6a2f27825b4 |
+| `darwin/arm64/Cursor-darwin-arm64.zip` | fed256d59c331944f75dedfbaffa43a7b50e9eda5f2c30156b6a8c2195dbb8c7 |
+| `darwin/x64/Cursor-darwin-x64.zip` | 80aae63467bef2e9de1b73d349215cd9cc0866290eb04ad3c2a7c9fc033b75af |
+
+- Windows 没有官方 zip。两个 Inno Setup 安装包用 innoextract 解出。
+- mac 的 zip/dmg 用 7zz 解出。解出的目录在 `/workspace/cache/ex/{win-user,win-system,mac-arm64,mac-x64,linux-deb}`。
+
+### 各平台包内文件对比
+
+- 要改的 3 个文件在 5 个官方目录里**逐字节相同**（win-user、win-system、mac-arm64、mac-x64、linux-deb）：
+
+  | 文件 | sha256 |
+  |---|---|
+  | workbench.desktop.main.js | fd9ac3ed… |
+  | workbench.glass.main.js | 6c433934… |
+  | nls.messages.json | 1caf42fe… |
+
+- 所以锚点合并为一份 `anchors/3.27.22.json`，其中 `platforms: [linux, win32, darwin]`，并带上 `pristine` sha。
+  - darwin 下把 `resources/app/` 映射成 `Resources/app/`（安装根是 `Cursor.app/Contents`）。
+  - 仍支持 `anchors/<platform>/<ver>.json` 按平台单独覆盖。
+- product.json：
+  - mac 和 linux 完全相同（c3bb3bbc…）。
+  - Windows 只多一个 `target` 字段：user 是 aaca9268…，system 是 c16364e0…。
+  - checksums 共 6 项。glass 不在其中，所以只会更新 workbench.desktop.main.js 这一项。补丁只改这一个值，`target` 等其余字节保持原样。
+- macOS 签名（用 rcodesign 读取）：
+  - Developer ID，Team VDXQ22DGB9，开启了 hardened runtime。
+  - 主程序的 entitlements 里**没有** disable-library-validation，所以 ad-hoc 重签名**不能**带 `--options runtime`，否则 ad-hoc 签名的主程序加载不了 Team 签名的 Electron Framework。
+  - `ElectronAsarIntegrity` 只覆盖 default_app.asar，与我们改的文件无关。
+  - 只对外层做 ad-hoc 签名时，改动的只有 `MacOS/Cursor` 和 `_CodeSignature/CodeResources` 两个文件。这两个文件也一起备份，还原后签名回到原样。
+- `scripts/verify-platform-trees.mjs` 在 5 个官方目录的副本上跑完整补丁，80 项检查全部通过（日志 `/workspace/logs/verify-trees.log`）：
+  - 未命中为 0；
+  - `node --check` 通过；
+  - nls 是合法 JSON；
+  - checksum 与 VS Code 的算法一致；
+  - product.json 其余字节不变。
+- `scripts/smoke-check.mjs` 也对官方 win/mac 目录检查过：pristine 和 checksums 都通过。
+
+### 实现
+
+- `src/platform/win.js`：
+  - 检测：默认路径加注册表 Uninstall 的 InstallLocation。
+  - `kind`：win-user / win-system / win-other。
+  - 进程：Get-CimInstance 按 ExecutablePath 匹配，不区分大小写、不区分斜杠方向。
+  - 关闭：taskkill，必要时 /T /F。
+  - CLI：`Cursor.exe` 加 `ELECTRON_RUN_AS_NODE=1` 运行 `resources/app/out/cli.js`。
+  - UAC：用普通 powershell 启动 `Start-Process -Verb RunAs`，把 `helper/czl-apply.ps1` 的正文通过 `-EncodedCommand` 内嵌（约 10.4K 字符），同意授权后无法被替换。退出码 1223 表示取消，回退到手动命令。
+- `helper/czl-apply.ps1`（兼容 PS 5.1）：
+  - 白名单只允许 `resources/app/*.js|json`，拒绝 `..` 和反斜杠，检查重解析点。
+  - 先读进内存再算 sha，避免 TOCTOU。写 `.czl-new`，然后 Move-Item，带重试和复检。
+  - 结果写到结果文件。
+- `src/platform/mac.js`：
+  - 检测 /Applications 和 ~/Applications；识别 App Translocation。
+  - 进程：`ps` 找 `<root>/MacOS/Cursor` 和它的 Helper；SIGTERM 关闭，用 `open` 重新打开。
+  - 签名方式 macSign：
+    - `adhoc`（默认）：对外层 ad-hoc 签名，加 `--preserve-metadata=entitlements`，不带 runtime。
+    - `adhoc-deep`：先用 APFS clone 备份整个 .app，还原时整包换回。
+    - `none`：不重签名。
+  - 写完后执行 `xattr -dr com.apple.quarantine`。
+  - 没有写权限时用 osascript 的 `do shell script … with administrator privileges`，脚本和清单都走 argv 传入。
+  - 权限问题：“App 管理”拦截（EPERM）报 `MAC_APP_MANAGEMENT` 并附设置链接；被转移的 .app 报 `MAC_TRANSLOCATED`。
+- `helper/czl-apply.sh` 现在可以在 macOS 上运行：
+  - 兼容 BSD stat 和 shasum。
+  - darwin 下白名单额外允许 `MacOS/Cursor` 和 `_CodeSignature/CodeResources`。
+  - 支持 `!codesign-adhoc` 和 `!unquarantine` 两个动作行，只在 macOS 上生效。签名失败时退出码为 6。
+- 通用改动：
+  - 引擎各处都接收 `platform` 和 `env` 参数。
+  - 新增 pristine 检查：文件和官方原版不一致时报 `MODIFIED_INSTALL`。
+  - REPO 路径改用 fileURLToPath。原来的 `URL.pathname` 在 Windows 上会得到 `/C:/…`，路径里有空格或中文时还会是 %20 编码。
+  - run.mjs 新增 `--mac-sign`。
+  - GUI 能显示 MAC_APP_MANAGEMENT 和 MAC_TRANSLOCATED 的提示。
+
+### 测试
+
+`npm test` 共 83 项全部通过（原 54 项 + 新增 29 项），Linux 的原有测试仍然全绿。
+- `anchors-shared` 4 项。
+- `platform-win` 12 项：
+  - 用假的 `C:\…` 树和模拟的 reg、PowerShell、taskkill。
+  - **用真实 pwsh 7.6.9 端到端运行 czl-apply.ps1**：取出 UAC 启动器里的 -EncodedCommand 直接执行，同时测了篡改返回 3、越界路径返回 2。
+  - 测了 UAC 取消后转手动命令（带 BOM 的脚本副本）。
+- `platform-mac` 13 项：
+  - 用假的 Cursor.app 和模拟的 codesign、xattr、ps、cp、osascript。
+  - 覆盖：签名参数正确、还原后 Mach-O 和 CodeResources 逐字节恢复、deep 模式整包换回、EPERM、Translocation、osascript 取消和退出码解析、helper 拒绝 macOS 专用动作。
+
+在 box 上用临时 user-data-dir 另开一个 Cursor（带 --remote-debugging-port），`smoke-check ui` 读到的界面是“用 AI 写代码的最佳方式 登录 注册”。检查完关闭了这个实例，用户原来的 Cursor 实例没有动。
+
+### 打包（在 Linux 上交叉打包，均未签名或只做了 ad-hoc 签名）
+
+- `node scripts/build-desktop.mjs --win`：生成 `dist/cursor-zh-localizer-0.1.0-win-x64.zip` 和 `…-win-x64-portable.exe`。
+  - 没有 wine，所以设了 `signAndEditExecutable: false`：exe 是默认图标，也没有版本资源。
+  - `requestedExecutionLevel: asInvoker`。
+- `node scripts/build-desktop.mjs --mac`：生成 `dist/cursor-zh-localizer-0.1.0-mac-{x64,arm64}.zip`。
+  - electron-builder 在 Linux 上不签名，所以之后用 rcodesign 对整包做 ad-hoc 签名，再用 7zz 重新打 zip（`-snl` 保留符号链接）。
+  - 未公证。
+- 两个平台的 helper 都在 `app.asar.unpacked/packages/engine/helper/`。anchors 和 dicts 在 asar 里。
+- sha256 见 `/workspace/logs/dist-sha256.txt`。
+
+### 只能在真机上确认的
+
+- UAC 弹窗本身，以及 Program Files 下的真实 ACL。
+- Defender / SmartScreen 的反应。
+- Cursor 运行时的文件占用。
+- macOS 的“App 管理”(TCC) 实际在哪一步拦截：open 探测时还是写入时。
+- osascript 授权框。
+- ad-hoc 签名后的 Cursor 能不能启动，Gatekeeper / spctl 的表现。
+- 钥匙串 “Cursor Safe Storage” 提示。
+- 自动更新在 ad-hoc 签名后是否失效。
+- Intel 与 Apple Silicon 的差异。
+- 打包产物能否在真机上启动。
+
+详见 `docs/real-machine-test-plan.md`。
+
+## 第 7 轮（2026-10-29 18:45–19:00，Asia/Shanghai）：准备在用户 Mac 上验证（Cursor 3.27.14 arm64）
+
+- **下载地址**：`https://downloads.cursor.com/production/69b724ebc67ec522c1b5d287a5025f7a7e81be97/darwin/arm64/Cursor-darwin-arm64.zip`。zip 的 sha256 是 d0cab7ea553c5fa225ca5bc65e8608f693cdb9c040673fdcfec993eabe15dd60。
+  - 注意：下载路径里的 hash（末位是 `7`）和 product.json 里的 commit `69b724eb…be90` **不一样**。用 commit 拼出的地址返回 403。
+  - 3.27.22 也是这样：下载路径是 `…c1f`，product.json 是 `…c10`。
+  - 解出的包：version 3.27.14，commit 69b724ebc67ec522c1b5d287a5025f7a7e81be90，vscodeVersion 1.128.0，和用户机器上的一致。
+- **原版 sha256**：`docs/pristine-3.27.14-darwin-arm64.sha256`，路径相对 `Cursor.app/Contents/Resources/app`，可以直接用 `shasum -a 256 -c` 校验。
+  - 和 3.27.22 相比，两个 workbench JS 和 product.json 不同；nls.messages.json 相同（1caf42fe…）。
+  - 签名：Team VDXQ22DGB9，hardened runtime。
+  - Electron fuses：RunAsNode=1，所以 CLI 可以用 `ELECTRON_RUN_AS_NODE`；EmbeddedAsarIntegrityValidation=0。
+- **锚点 `anchors/3.27.14.json`**：
+  - 生成命令：`build-anchors.py <tree> --platforms darwin --seed anchors/3.27.22.json`。这两个参数是本轮新加的：`--platforms` 只声明已验证的平台；`--seed` 从相邻版本继承手写片段。
+  - 耗时约 51 秒，全自动，没有手工修改。
+  - 覆盖率和 3.27.22 **完全相同**（3.27.22 重新生成后逐字节不变，可作对照）：
+
+    | 文件 | SAFE | UNSAFE（只走 DOM） | MISSING | 片段 |
+    |---|---|---|---|---|
+    | desktop | 388 | 119 | 154 | 27 |
+    | glass | 429 | 124 | 108 | 27 |
+
+    - 两个版本的词条集合没有差异，2 条 required 都在。
+    - 词典共 661 条，其中 108 条在两个 bundle 里都没有出现（两个版本一样）。
+    - NLS 176 条，语言包同为 1.128.0。
+- **副本验证**：`verify-platform-trees` 全部通过，日志 `/workspace/logs/verify-3.27.14.log`。
+  - pristine 一致。
+  - 静态替换 1549 处，片段 74 处，未命中 0。
+  - NLS 176 条，未命中 0。
+  - `node --check` 通过。
+  - 更新了 1 个 checksum，product.json 其余字节不变。
+- **CLI 离线包**：`sh scripts/pack-cli.sh` 生成 `/workspace/dist-mac-cli/czl-cli.tar.gz`。
+  - 引擎没有任何依赖。
+  - 随包带了 vsix（sha256 d43d9f7b…，和 Open VSX 上的一致）。引擎会优先使用 `vendor/` 里的 vsix。
+  - 用法说明在 `docs/mac-cli/RUN.md`。
+  - 在 box 上演练过：解开 tar，从包里导入引擎，用 platform=darwin 对 3.27.14 的真实文件做 localize → revert，codesign/xattr/ps 用假的。结果：替换 1549 + 74，未命中 0；没有联网下载；还原后 4 个文件的 sha、MacOS/Cursor 和 CodeResources 都逐字节恢复。
+
+## 第 8 轮：Mac 真机反馈补漏（3.27.14）
+
+用户在自己 Mac 上（3.27.14 universal）跑完汉化后反馈两类问题：
+
+- **原生菜单全英文**（只有我们 NLS 补丁里的“关闭窗口”是中文）。
+  - 原因：Cursor 主进程启动时只读 `<userData>/languagepacks.json` 决定语言包；这份清单由共享进程在**启动之后**按已装扩展重建。CLI 刚装完语言包时清单里没有 zh-cn，第一次重启拿不到中文 NLS（不会生成 `clp/<hash>.zh-cn`），要再重启一次。box 上之所以没暴露，是因为调试期间 Cursor 已启动过多次，清单早已写好。
+  - 修复：`registerLanguagePack()` 装完语言包后按 VS Code `LanguagePacksCache` 的格式自己登记（hash = md5(id + version)，translations 指向扩展目录）。用真实语言包生成的文件与 box 上 Cursor 自己写的 `languagepacks.json` **逐字节一致**。还原时 `unregisterLanguagePack()` 撤掉条目。登记失败只告警（最坏多重启一次）。
+  - box 实测：revert（清单里 zh-cn 已撤掉、clp 已清空）→ localize → 只启动一次 Cursor，立即生成 `clp/e847c90f….zh-cn/<commit>/nls.messages.json`，里面是“文件(&&F)”等中文。
+- **设置/Customize/智能体窗口里还有英文**：新增 163 条词条（共 824 条），两条模板片段规则：
+  - 编辑器标签页标题 `getName(){return"Customize"}`（标签栏是文件名区，DOM 补漏不碰，只能静态改）。
+  - Customize 页按钮 `["Browse", <span> Marketplace</span>]` 拆分文案。
+  - `New Project` 加入 `DOM_ONLY`：bundle 里拿它当默认项目名存盘并用 `t.name===N2i` 比较，静态替换会让汉化前后的数据对不上。
+  - 单词类（All / MCPs / Installed / Add / Projects / Customize）在 bundle 里有逻辑用法（case/比较/对象键），只走 DOM 补漏；`Installed 4` 的数字是独立文本节点，DOM 能翻。
+  - `IDE` 保留英文（术语表）。
+- 锚点重新生成（3.27.22 必须用原版 deb 解包目录 `/workspace/cache/ex/linux-deb/usr/share/cursor`，不能用 box 上已汉化的 /usr/share/cursor）：两版本覆盖率相同，desktop SAFE 492 / glass SAFE 566，片段各 29；NLS 191 条。
+- 副本验证：mac14 / linux22 / mac22 / win22 全部通过，静态 1983 处 + 片段 78 处，未命中 0，NLS 191 未命中 0。

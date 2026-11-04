@@ -1,0 +1,14 @@
+export { detectCursor } from './detect.js';
+export { createBackup, sha256File } from './backup.js';
+export { restoreBackup, dropBackup } from './restore.js';
+export { loadAnchors, loadDict, loadNlsDict, loadPatterns } from './anchors.js';
+export { applyPatch, applyFragments, filesToBackup, vscodeChecksum, updateChecksums } from './patch.js';
+export * from './langpack.js';
+export { injectDomRuntime, buildInjection, stripInjection } from './inject.js';
+export { localize, revert, status, defaultPaths, readState, patchTree } from './localize.js';
+export { supportedVersions, remapAnchors, appPrefix, nearestVersion, versionDistance } from './anchors.js';
+export { applyFiles, checkWritable, filesMatch, mountOf, elevationInfo, HELPER_PATH } from './elevate.js';
+export { listCursorProcesses, closeCursor, relaunchCursor } from './process.js';
+export { findAppImages, extractAppImage, listExtracted, removeExtracted, extractBase } from './appimage.js';
+export { detectAllCursors, installKind } from './detect.js';
+export { NEXT_STEP, nextStep } from './hints.js';

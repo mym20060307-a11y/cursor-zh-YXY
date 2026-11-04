@@ -1,0 +1,18 @@
+node_modules/
+.cache/
+*.vsix
+dist/
+.build/
+apps/tauri/src-tauri/target/
+apps/tauri/src-tauri/gen/
+__pycache__/
+
+# local / tooling
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+*.tmp
+yxy-icon-preview.png
+apps/desktop/brand-icon.png.bak

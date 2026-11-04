@@ -1,0 +1,9 @@
+{
+  "name": "@cursor-zh/engine",
+  "license": "MIT",
+  "version": "0.2.4",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": { "test": "node --test test/*.test.js" }
+}

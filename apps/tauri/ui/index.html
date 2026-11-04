@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>YXY · Cursor 一键汉化</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #152536;
+      --ink-soft: #3a4f63;
+      --muted: #6a7d90;
+      --line: #d5dee8;
+      --surface: #eef3f7;
+      --panel: #ffffff;
+      --accent: #0c7a84;
+      --accent-hover: #09656d;
+      --accent-press: #075057;
+      --accent-soft: #e2f3f4;
+      --ok: #1a7a56;
+      --ok-soft: #e6f5ee;
+      --warn: #a86a00;
+      --warn-soft: #fff3e0;
+      --bad: #b83a2e;
+      --bad-soft: #fdeceb;
+      --log: #141b24;
+      --log-fg: #c9d3de;
+      --radius: 10px;
+      --shadow: 0 1px 2px rgba(21, 37, 54, 0.05), 0 8px 24px rgba(21, 37, 54, 0.06);
+      --font: "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Noto Sans SC", sans-serif;
+      --mono: "Cascadia Mono", "Sarasa Mono SC", "JetBrains Mono", ui-monospace, Consolas, monospace;
+      --fs: 13px;
+      --fs-sm: 12px;
+      --fs-lg: 15px;
+      --fs-title: 20px;
+      --lh: 1.5;
+      --pad-x: 20px;
+      --gap: 12px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      font-size: var(--fs);
+      line-height: var(--lh);
+      color: var(--ink);
+      background:
+        radial-gradient(900px 420px at 8% -8%, rgba(12, 122, 132, 0.12), transparent 55%),
+        linear-gradient(168deg, #f6f9fb 0%, var(--surface) 50%, #e7eef4 100%);
+      background-attachment: fixed;
+    }
+
+    .shell {
+      min-height: 100%;
+      margin: 0 auto;
+      padding: 20px var(--pad-x) 16px;
+      display: flex;
+      flex-direction: column;
+      gap: var(--gap);
+      animation: rise 280ms ease-out;
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .shell, .notice, #progress .bar::after, .btn { animation: none !important; transition: none !important; }
+    }
+
+    .hero {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 2px 0 2px;
+    }
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .hero-mark {
+      flex: 0 0 auto;
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(12, 122, 132, 0.22);
+      user-select: none;
+    }
+    .hero-mark img {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .brand-text { min-width: 0; }
+    .brand {
+      margin: 0;
+      font-size: var(--fs-title);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+      color: var(--ink);
+    }
+    .tag {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: var(--fs-sm);
+      line-height: 1.4;
+    }
+    .copy-mark {
+      flex: 0 0 auto;
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      user-select: none;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      box-shadow: var(--shadow);
+    }
+    .meta {
+      display: grid;
+      grid-template-columns: 4.5rem 1fr;
+      column-gap: 12px;
+      row-gap: 8px;
+      margin: 0;
+      align-items: baseline;
+    }
+    .meta dt,
+    .meta dd {
+      margin: 0;
+      font-size: var(--fs);
+      line-height: 1.45;
+    }
+    .meta dt {
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .meta dd {
+      color: var(--ink-soft);
+      word-break: break-all;
+    }
+    .meta dd.mono, .mono {
+      font-family: var(--mono);
+      font-size: var(--fs-sm);
+      color: var(--ink);
+    }
+    #installs {
+      width: 100%;
+      max-width: 100%;
+      font: inherit;
+      font-size: var(--fs);
+      padding: 5px 8px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+    }
+
+    .badge {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 1px 7px;
+      border-radius: 5px;
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      line-height: 1.4;
+      background: #e8eef4;
+      color: var(--ink-soft);
+      vertical-align: middle;
+    }
+    .badge.t-ok, .t-ok { color: var(--ok); }
+    .badge.t-ok { background: var(--ok-soft); }
+    .badge.t-warn, .t-warn { color: var(--warn); }
+    .badge.t-warn { background: var(--warn-soft); }
+    .badge.t-bad, .t-bad { color: var(--bad); }
+    .badge.t-bad { background: var(--bad-soft); }
+    .t-ok, .t-warn, .t-bad { font-weight: 600; }
+
+    #notice { display: flex; flex-direction: column; gap: 8px; }
+    #notice:empty { display: none; }
+    .notice {
+      border-radius: 8px;
+      padding: 10px 12px;
+      line-height: 1.55;
+      border: 1px solid transparent;
+      font-size: var(--fs);
+      animation: notice-in 220ms ease-out;
+    }
+    @keyframes notice-in {
+      from { opacity: 0; transform: translateY(-3px); }
+      to { opacity: 1; transform: none; }
+    }
+    .notice.info { background: var(--accent-soft); border-color: #b5dfe2; }
+    .notice.warn { background: var(--warn-soft); border-color: #efd4a0; }
+    .notice.error { background: var(--bad-soft); border-color: #f1c2bc; }
+    .notice .title { font-weight: 700; color: var(--ink); margin-bottom: 2px; }
+    .notice code, .cmd { font-family: var(--mono); font-size: var(--fs-sm); }
+    .cmd {
+      display: block;
+      background: var(--log);
+      color: #e6edf4;
+      padding: 8px 10px;
+      border-radius: 8px;
+      margin: 8px 0;
+      word-break: break-all;
+      user-select: all;
+      line-height: 1.45;
+    }
+    .notice .btn, .notice button {
+      margin: 8px 8px 0 0;
+      font-size: var(--fs);
+      padding: 7px 12px;
+    }
+    .next { margin-top: 4px; color: var(--ink-soft); }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn, .actions button, .notice button {
+      font-family: inherit;
+      font-size: var(--fs);
+      font-weight: 600;
+      line-height: 1.3;
+      height: 36px;
+      padding: 0 14px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      cursor: pointer;
+      transition: background 140ms ease-out, border-color 140ms ease-out, box-shadow 140ms ease-out;
+    }
+    .btn:hover:not(:disabled), .actions button:hover:not(:disabled), .notice button:hover:not(:disabled) {
+      border-color: #c2ced9;
+      box-shadow: 0 2px 8px rgba(21, 37, 54, 0.07);
+    }
+    .btn.primary, .actions button.primary, .notice button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(12, 122, 132, 0.24);
+    }
+    .btn.primary:hover:not(:disabled), .actions button.primary:hover:not(:disabled), .notice button.primary:hover:not(:disabled) {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+    .btn.primary:active:not(:disabled), .actions button.primary:active:not(:disabled) {
+      background: var(--accent-press);
+    }
+    #localize {
+      min-width: 120px;
+      font-size: var(--fs-lg);
+      height: 36px;
+      padding: 0 18px;
+    }
+    .actions .utils {
+      display: flex;
+      gap: 2px;
+      margin-left: auto;
+    }
+    .actions .ghost {
+      height: 36px;
+      padding: 0 10px;
+      font-size: var(--fs);
+      font-weight: 500;
+      color: var(--ink-soft);
+      background: transparent;
+      border-color: transparent;
+      box-shadow: none;
+    }
+    .actions .ghost:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.7);
+      border-color: var(--line);
+      box-shadow: none;
+    }
+    button:disabled, .btn:disabled {
+      opacity: 0.42;
+      cursor: default;
+      box-shadow: none !important;
+    }
+
+    #progress { margin-top: -2px; }
+    #progress .bar {
+      height: 4px;
+      border-radius: 999px;
+      background: #d7e1ea;
+      overflow: hidden;
+      position: relative;
+    }
+    #progress .bar::after {
+      content: "";
+      position: absolute;
+      left: -40%;
+      width: 40%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      animation: slide 1.2s ease-in-out infinite;
+    }
+    @keyframes slide { to { left: 100%; } }
+    #progress .step {
+      color: var(--muted);
+      font-size: var(--fs);
+      margin-top: 6px;
+    }
+
+    .log-wrap {
+      flex: 1 1 auto;
+      min-height: 150px;
+      display: flex;
+      flex-direction: column;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid #1a222c;
+      box-shadow: var(--shadow);
+      background: var(--log);
+    }
+    .log-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 12px;
+      background: #171f29;
+      color: #8f9eae;
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid #222c38;
+    }
+    pre#log {
+      flex: 1 1 auto;
+      margin: 0;
+      height: 140px;
+      min-height: 120px;
+      overflow: auto;
+      padding: 10px 12px;
+      background: transparent;
+      color: var(--log-fg);
+      font-family: var(--mono);
+      font-size: var(--fs-sm);
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    #log .err { color: #ff8b82; }
+    #log .done { color: #6fdfa0; }
+    .err { color: #ff8b82; }
+    .done { color: #6fdfa0; }
+
+    .foot {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px 16px;
+      padding-top: 2px;
+    }
+    .note {
+      margin: 0;
+      flex: 1 1 280px;
+      color: var(--muted);
+      font-size: var(--fs-sm);
+      line-height: 1.5;
+      max-width: 58ch;
+    }
+    .copyright {
+      margin: 0;
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="hero">
+      <div class="brand-row">
+        <div class="hero-mark" aria-hidden="true"><img src="brand-icon.png" alt="" width="40" height="40" /></div>
+        <div class="brand-text">
+          <h1 class="brand">Cursor 一键汉化</h1>
+          <p class="tag">备份 · 汉化 · 可一键还原</p>
+        </div>
+      </div>
+      <div class="copy-mark" title="YXY">YXY</div>
+    </header>
+
+    <section class="panel" aria-label="安装状态">
+      <dl class="meta">
+        <dt>安装</dt>
+        <dd>
+          <select id="installs" hidden></select>
+          <span id="root" class="mono">检测中…</span>
+        </dd>
+        <dt>安装方式</dt><dd id="kind">-</dd>
+        <dt>版本</dt><dd id="version">-</dd>
+        <dt>写入权限</dt><dd id="perm">-</dd>
+        <dt>状态</dt><dd id="state">-</dd>
+      </dl>
+    </section>
+
+    <div id="notice"></div>
+
+    <div class="actions">
+      <button id="localize" class="primary">一键汉化</button>
+      <button id="revert">一键还原</button>
+      <div class="utils">
+        <button id="refresh" class="ghost" type="button">刷新</button>
+        <button id="showlog" class="ghost" type="button">打开日志</button>
+      </div>
+    </div>
+
+    <div id="progress" hidden>
+      <div class="bar" role="progressbar" aria-label="进行中"></div>
+      <div class="step" id="step">准备中…</div>
+    </div>
+
+    <section class="log-wrap" aria-label="运行日志">
+      <div class="log-head"><span>运行日志</span><span>实时</span></div>
+      <pre id="log"></pre>
+    </section>
+
+    <footer class="foot">
+      <p class="note">本工具会修改 Cursor 安装文件，修改前自动备份，可一键还原。只有「写入安装目录」需要管理员权限。</p>
+      <p class="copyright">© 2026 YXY</p>
+    </footer>
+  </div>
+  <script src="tauri-bridge.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

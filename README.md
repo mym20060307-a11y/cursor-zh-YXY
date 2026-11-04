@@ -5,7 +5,7 @@
 # YXY · Cursor 一键汉化
 
 **把 Cursor 的菜单、设置、命令面板和 Agent 界面换成简体中文。**  
-一点汉化，一点还原。由 **YXY** 维护。
+一点汉化，一点还原。由 **YXY** 维护（当前仓库维护版本）。
 
 [![许可证](https://img.shields.io/badge/许可证-MIT-yellow)](LICENSE)
 [![平台](https://img.shields.io/badge/平台-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#-下载安装)
